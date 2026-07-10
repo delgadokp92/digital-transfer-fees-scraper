@@ -1,0 +1,7 @@
+# Forces the reduced viewer toolbar (no Share/GitHub/Edit/"Manage app" icons)
+# for every visitor, including the app owner -- otherwise those show up for
+# whoever is logged into Streamlit Community Cloud viewing their own app.
+# app.py also hides the hamburger menu and "Made with Streamlit" footer via
+# CSS as a second layer, since that chrome isn't controlled by this setting.
+[client]
+toolbarMode = "viewer"

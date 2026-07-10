@@ -251,6 +251,27 @@ def query_fees_as_of_grouped(conn: sqlite3.Connection, as_of_iso: str, window_se
     return result
 
 
+def query_feed(conn: sqlite3.Connection, limit: int = 300) -> list[dict]:
+    """A "what's new" feed: one row per distinct fee fact (entity, network,
+    fee_type, amount, conditions), returning only its FIRST-seen scrape.
+    fee_snapshots is append-only and the scraper re-inserts a row for a
+    still-true fee on every run, so ordering by scraped_at directly would
+    repeat the same fee 3x/day forever -- this collapses that down to actual
+    new-information events (a fee introduced, changed, or a promo that
+    appeared), newest first."""
+    rows = conn.execute(
+        """SELECT fs.* FROM fee_snapshots fs
+           WHERE fs.id IN (
+               SELECT MIN(id) FROM fee_snapshots
+               GROUP BY entity, network, fee_type, amount, conditions
+           )
+           ORDER BY fs.scraped_at DESC, fs.id DESC
+           LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def query_history(conn: sqlite3.Connection, entity: str):
     return conn.execute(
         "SELECT * FROM fee_snapshots WHERE entity = ? ORDER BY scraped_at", (entity,)
@@ -259,6 +280,35 @@ def query_history(conn: sqlite3.Connection, entity: str):
 
 def query_audit(conn: sqlite3.Connection, audit_id: int):
     return conn.execute("SELECT * FROM audit_log WHERE id = ?", (audit_id,)).fetchone()
+
+
+def query_sources(conn: sqlite3.Connection) -> list[dict]:
+    """Every distinct source URL ever fetched, grouped by entity, with how
+    many times it's been checked and whether the most recent check succeeded
+    -- this is the per-institution "where does this data come from" index,
+    covering entities even when extraction found no fee (e.g. a blocked
+    site), not just ones with fee_snapshots rows."""
+    rows = conn.execute(
+        """SELECT entity, source_type, source_url,
+                  COUNT(*) AS check_count,
+                  MAX(fetched_at) AS last_checked
+           FROM audit_log
+           GROUP BY entity, source_type, source_url
+           ORDER BY entity, source_type, source_url"""
+    ).fetchall()
+    result = []
+    for r in rows:
+        last_audit = conn.execute(
+            """SELECT status, error_message FROM audit_log
+               WHERE entity = ? AND source_type = ? AND source_url = ?
+               ORDER BY fetched_at DESC LIMIT 1""",
+            (r["entity"], r["source_type"], r["source_url"]),
+        ).fetchone()
+        d = dict(r)
+        d["last_status"] = last_audit["status"] if last_audit else None
+        d["last_error"] = last_audit["error_message"] if last_audit else None
+        result.append(d)
+    return result
 
 
 def query_flagged(conn: sqlite3.Connection):
