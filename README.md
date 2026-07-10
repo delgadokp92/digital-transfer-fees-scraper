@@ -1,5 +1,9 @@
 # Transfer Fees Monitoring
 
+**⚠️ Work in progress.** Registry coverage, extraction accuracy, and site
+discovery are all still being actively expanded/tuned -- see "Known
+limitations found in practice" below before treating any figure as final.
+
 **Live dashboard:** https://digital-transfer-fees-osint.streamlit.app/
 
 Tracks InstaPay and PESONet transfer fees for BSP-supervised participating
