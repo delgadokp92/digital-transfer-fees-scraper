@@ -29,8 +29,8 @@ ANTHROPIC_API_KEY=sk-ant-api03-...
 ```
 
 Get a key at [console.anthropic.com](https://console.anthropic.com) → Settings
-→ API Keys. This is a separate account/balance from any AI chat subscription
-you might have -- it needs its own credits or billing set up. Cost is trivial
+→ API Keys. This is a separate account/balance from a claude.ai chat
+subscription -- it needs its own credits or billing set up. Cost is trivial
 for this workload (see "Cost" below).
 
 Optional, for screenshot capture when a fee changes:
@@ -62,8 +62,8 @@ pytest
 
 ## How extraction works
 
-Fee text is read by an LLM (Anthropic's Haiku model, via `scraper/llm_extract.py`)
-rather than regex/keyword matching. An earlier version of this project used regex --
+Fee text is read by an LLM (Claude Haiku, via `scraper/llm_extract.py`) rather
+than regex/keyword matching. An earlier version of this project used regex --
 it required a hand-rolled rule for every edge case found in testing (comma-
 grouped numbers, magnitude words, a bare "free" matching inside "Toll-Free",
 an OTC-vs-digital-channel state machine) and still couldn't represent an

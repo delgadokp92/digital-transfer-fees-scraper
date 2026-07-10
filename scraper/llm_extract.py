@@ -17,8 +17,8 @@ number. Every institution can have zero, one, or several distinct fee
 conditions extracted from a single page; none are discarded in favor of "the
 best one".
 
-Uses Anthropic's Haiku model: this is a classification/extraction task, not a
-hard reasoning task, so the cheapest capable model is the right fit (roughly
+Uses Claude Haiku: this is a classification/extraction task, not a hard
+reasoning task, so the cheapest capable model is the right fit (roughly
 $0.002-0.003 per page at typical article/page lengths). Requires
 ANTHROPIC_API_KEY; callers should catch exceptions from this module and flag
 the entity in scraper_health rather than crash the batch run, consistent with
