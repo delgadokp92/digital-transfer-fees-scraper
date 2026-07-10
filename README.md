@@ -1,5 +1,7 @@
 # Transfer Fees Monitoring
 
+**Live dashboard:** https://digital-transfer-fees-osint.streamlit.app/
+
 Tracks InstaPay and PESONet transfer fees for BSP-supervised participating
 institutions (banks, e-wallets, EMIs), sourced only from each institution's own
 public website, press releases, or Facebook page -- **never from BSP reports**.
@@ -258,10 +260,11 @@ failure modes -- not hypothetical risks:
   with no separate logic needed) and should be expected to find nothing most
   of the time; failures/empty results are logged to `scraper_health`, not
   raised as crashes.
-- **Streamlit Community Cloud custom domains.** The free tier is generally
-  accessed via a `*.streamlit.app` URL. Mapping the Spaceship-purchased domain
-  directly to it isn't confirmed to work out of the box -- to be solved once
-  the app is live (likely a redirect/landing page or proxy in front of it).
+- **Streamlit Community Cloud custom domains.** The app is live at
+  https://digital-transfer-fees-osint.streamlit.app/ (the free tier's
+  `*.streamlit.app` subdomain). Mapping the Spaceship-purchased domain directly
+  to it is a separate, still-unresolved step -- not confirmed to work out of
+  the box (likely a redirect/landing page or proxy in front of it, if pursued).
 - **Repo size growth.** SQLite rows, HTML snapshots, and occasional
   screenshots only ever accumulate via the scheduled commit job. Fine to
   start; may need a pruning/archival strategy later.
