@@ -52,6 +52,7 @@ MIN_RELEVANCE_SCORE = 2
 MAX_SITEMAP_URLS = 500
 MAX_NESTED_SITEMAPS = 5
 MAX_CANDIDATE_PAGES = 8  # cap on how many relevant pages get LLM extraction per entity
+BROWSER_FALLBACK_MAX_PAGES = 10  # browser navigation is much slower per-page than plain HTTP
 
 _MONTH_NUMBERS = {
     "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
@@ -118,6 +119,8 @@ class SiteCrawlerScraper(BaseScraper):
         self.timeout = timeout
         self._domain = urlparse(base_url).netloc
         self._visited_count = 0  # page-fetch budget shared across sitemap + crawl phases
+        self._use_browser = False  # set True only during the Playwright fallback pass
+        self._browser_page = None  # the reused Playwright page during that pass
 
     def _score_url(self, url: str, link_text: str = "") -> int:
         # URL slugs are almost always hyphen/underscore-separated ("transfer-
@@ -137,6 +140,9 @@ class SiteCrawlerScraper(BaseScraper):
         return urlparse(url).netloc == self._domain
 
     def _fetch_page(self, url: str) -> str:
+        if self._use_browser:
+            self._browser_page.goto(url, timeout=self.timeout * 1000, wait_until="networkidle")
+            return self._browser_page.content()
         response = requests.get(url, timeout=self.timeout, headers={"User-Agent": DEFAULT_USER_AGENT})
         response.raise_for_status()
         return response.text
@@ -146,9 +152,50 @@ class SiteCrawlerScraper(BaseScraper):
     def _discover_candidate_pages(self) -> list[tuple[str, str]]:
         self._visited_count = 0
         candidates = self._sitemap_candidates()
-        if candidates:
-            return candidates
-        return self._crawl_candidates()
+        if not candidates:
+            candidates = self._crawl_candidates()
+        if not candidates:
+            # Plain HTTP found nothing at all -- either the site blocked the
+            # request outright (bot/WAF protection: BDO, PNB, Security Bank,
+            # UnionBank all fail here) or it's a JS-rendered SPA that returns
+            # an empty app shell without executing JavaScript (GCash,
+            # ShopeePay, TayoCash). A real browser can help with either, so
+            # retry the same discovery process through Playwright before
+            # giving up. Optional dependency -- silently skipped if not
+            # installed, same graceful-degradation pattern as screenshot capture.
+            candidates = self._discover_with_browser()
+        return candidates
+
+    def _discover_with_browser(self) -> list[tuple[str, str]]:
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            return []
+
+        self._visited_count = 0
+        self._use_browser = True
+        # Browser navigation is much slower per-page than a plain HTTP GET --
+        # bound the worst-case CI time by capping this fallback pass to a
+        # smaller page budget than the plain-HTTP discovery gets.
+        original_max_pages = self.max_pages
+        self.max_pages = min(self.max_pages, BROWSER_FALLBACK_MAX_PAGES)
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch()
+                try:
+                    self._browser_page = browser.new_page(user_agent=DEFAULT_USER_AGENT)
+                    candidates = self._sitemap_candidates()
+                    if not candidates:
+                        candidates = self._crawl_candidates()
+                    return candidates
+                finally:
+                    browser.close()
+        except Exception:
+            return []  # browser launch/navigation failed -- fall through to "not found"
+        finally:
+            self.max_pages = original_max_pages
+            self._use_browser = False
+            self._browser_page = None
 
     def _locate_sitemaps(self) -> list[str]:
         sitemap_urls: list[str] = []

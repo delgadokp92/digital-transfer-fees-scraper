@@ -1,3 +1,0 @@
-# Optional. Only needed for the screenshot-on-fee-change feature in scraper/run_all.py.
-# After installing, also run: playwright install chromium
-playwright>=1.40

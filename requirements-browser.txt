@@ -1,0 +1,7 @@
+# Optional. Used for two things: (1) screenshot-on-fee-change capture in
+# scraper/run_all.py, and (2) the Playwright fallback fetch in
+# scraper/website/crawler.py, used when a plain HTTP request fails/times out
+# (e.g. bot/WAF-protected sites) or a site is a JS-rendered SPA that returns
+# no real content without executing JavaScript.
+# After installing, also run: playwright install chromium
+playwright>=1.40

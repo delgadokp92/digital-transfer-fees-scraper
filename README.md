@@ -33,12 +33,16 @@ Get a key at [console.anthropic.com](https://console.anthropic.com) → Settings
 subscription -- it needs its own credits or billing set up. Cost is trivial
 for this workload (see "Cost" below).
 
-Optional, for screenshot capture when a fee changes:
+Optional, for screenshot capture when a fee changes and for the Playwright
+fallback fetch (see "Bot-blocked and JS-rendered sites" below):
 
 ```
-pip install -r requirements-screenshots.txt
+pip install -r requirements-browser.txt
 playwright install chromium
 ```
+
+The scheduled GitHub Actions workflow installs this unconditionally (so the
+fallback runs automatically); it's optional for local dev.
 
 ## Running it
 
@@ -192,15 +196,27 @@ someone reviews whether the page changed in a way that affects extraction.
 Live-testing the registry against real institution sites surfaced concrete
 failure modes -- not hypothetical risks:
 
-- **Bot/WAF-protected sites return nothing.** BDO, PNB, Security Bank, and
-  UnionBank all fail to fetch even a single page via plain HTTP requests --
-  likely bot protection. These come back flagged in `scraper_health` rather
-  than silently empty.
-- **JavaScript-rendered sites are invisible to a plain HTTP crawl.** GCash,
-  ShopeePay, and TayoCash are app-shell SPAs -- the crawler fetches a page but
-  finds no real content, since the fee text is rendered client-side. Fixing
-  this would need a headless-browser fetch (e.g. Playwright) instead of
-  `requests` in `scraper/website/crawler.py`'s `_fetch_page`, not yet done.
+- **Bot/WAF-protected sites return nothing -- and a real browser doesn't
+  reliably fix it.** BDO, PNB, Security Bank, and UnionBank all fail to fetch
+  even a single page via plain HTTP. A Playwright fallback (real headless
+  Chromium, tried automatically when plain HTTP finds zero candidate pages --
+  see `_discover_with_browser` in `crawler.py`) was added and verified
+  working in general, but tested against BDO specifically it *still* failed
+  to fetch even the homepage (0 pages) -- this points to blocking at the
+  network/WAF level (e.g. IP/datacenter reputation), not just a missing
+  browser fingerprint, which a headless browser alone doesn't get around.
+  These come back flagged in `scraper_health` rather than silently empty.
+- **A "JS-rendered SPA" diagnosis can be wrong -- verify before assuming.**
+  GCash, ShopeePay, and TayoCash were assumed to be app-shell SPAs invisible
+  to plain HTTP. Testing the Playwright fallback found otherwise for GCash:
+  its homepage already returns substantial content via plain `requests`
+  (157KB) with only ~9% more from a full Chromium render (172KB) -- not the
+  dramatic difference an empty SPA shell would show. The real reason no fee
+  page is found is more likely that GCash's public marketing site simply
+  doesn't publish a fee schedule in crawlable form at all (probably
+  in-app-only content), which no fetch strategy fixes. Don't assume the
+  JS-rendering theory without checking content-length before vs. after a
+  real browser render, the way this was checked here.
 - **A crawler can find the wrong page entirely, not just misparse the right
   one.** Maya (`maya.ph`) is a confirmed case: the crawler kept landing on an
   old (2021) promo blog post about a cashback voucher instead of a current fee
