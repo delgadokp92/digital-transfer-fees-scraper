@@ -7,6 +7,20 @@ on:
     - cron: "0 16 * * *"  # 00:00 Asia/Manila (UTC+8)
   workflow_dispatch: {}
 
+# storage/fees.db is a binary SQLite file -- if two runs (a scheduled tick
+# overlapping a manual workflow_dispatch, or two ticks if GitHub's cron
+# scheduler runs late/drifts) each check it out, add their own new rows, and
+# try to commit+push independently, git cannot auto-merge the binary content
+# and the losing run's rebase fails outright with nobody there to resolve it
+# -- confirmed live: an entire manual full-registry run's results (new
+# snapshots, new fee_snapshots rows) were silently lost this way. Queuing
+# (not cancelling) runs on the same concurrency group means a second run
+# always starts its checkout AFTER the first one's commit has landed, so
+# there's nothing to conflict -- the actual fix, not just a retry loop.
+concurrency:
+  group: scrape-transfer-fees
+  cancel-in-progress: false
+
 jobs:
   scrape:
     runs-on: ubuntu-latest
@@ -41,6 +55,20 @@ jobs:
             git push && exit 0
             echo "Push rejected, rebasing onto latest origin/master (attempt $i)..."
             git fetch origin master
-            git rebase origin/master
+            if git rebase origin/master; then
+              continue
+            fi
+            # storage/fees.db is binary -- git can't auto-merge two
+            # independently-modified copies of it (this is the scenario
+            # `concurrency:` above exists to prevent; this is only a safety
+            # net for the rare case it still happens, e.g. a manual local
+            # push landing mid-run). Keep THIS run's freshly-scraped version
+            # rather than aborting and losing the whole run's results --
+            # "theirs" here means the commit being replayed (ours locally),
+            # since rebase swaps the usual merge meaning of ours/theirs.
+            echo "Binary conflict on fees.db/snapshots -- keeping this run's freshly-scraped version"
+            git checkout --theirs -- storage/fees.db storage/snapshots 2>/dev/null || true
+            git add storage/fees.db storage/snapshots
+            git rebase --continue || exit 1
           done
           exit 1
