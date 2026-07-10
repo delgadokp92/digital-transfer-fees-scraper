@@ -1,0 +1,581 @@
+# Registry of BSP-supervised InstaPay/PESONet participants to monitor.
+#
+# Roster source: BSP's published "List of BSP Supervised Electronic Money
+# Issuers (EMIs)" -- https://www.bsp.gov.ph/Lists/Directories/Attachments/7/emi.pdf
+# (updated periodically by BSP; re-check that URL for additions/removals; also
+# see the general bank/FI directory at
+# https://www.bsp.gov.ph/SitePages/FinancialStability/DirBanksFIList.aspx).
+# This is a DIRECTORY of who BSP supervises, not a fee report, so using it to
+# build the roster doesn't conflict with the "never source fees from BSP
+# reports" rule -- that rule is about fee figures specifically, not institution
+# names. Re-parsing that PDF into this file is currently a manual step; see the
+# open question in README about automating it.
+#
+# instapay/pesonet flags below are left as an ASSUMPTION (true for
+# EMIs/settlement banks) since this BSP list doesn't itself state per-network
+# participation -- PPMI (Philippine Payments Management, Inc.) would be the
+# authoritative source for that if/when we have it. Treat these flags as
+# provisional, not confirmed.
+#
+# website.base_url is only filled in for institutions whose real domain is
+# confidently known -- guessing domains for smaller/less well-known entities
+# risks pointing the scraper at the wrong site entirely, so those are left
+# without a website block (marked "website: TBD") until a real URL is supplied.
+# A domain being listed here is NOT a guarantee the crawler can actually reach
+# useful fee content on it -- see the per-entity notes: some real bank sites
+# block simple HTTP scraping (bot/WAF protection) or render fee info via
+# JavaScript the crawler's plain HTTP fetch can't see, so several are known to
+# come back flagged in scraper_health rather than with real data. Also: even
+# where the crawler DOES find a number, it's a naive keyword+regex extraction
+# on marketing/FAQ copy -- treat every scraped amount as provisional until
+# checked against its archived snapshot in the dashboard's audit trail, not as
+# ground truth just because it parsed successfully.
+#
+# Fields:
+#   name        - display name of the institution
+#   category    - bank | e-wallet | emi (free text, for grouping in the UI later)
+#   instapay/pesonet - whether the entity participates in each network (see caveat above)
+#   facebook.page_url  - public Facebook page to check for fee announcements (best-effort, see README)
+#
+# website.mode: "fixed" -- exact fee page URL + CSS selectors (see README).
+# website.mode: "crawl" -- only base_url is known; the contextual crawler (sitemap-first,
+#   then link-following) finds and parses whichever page looks most fee-related.
+#   website.base_url, website.keywords, website.max_pages, website.max_depth -- see README.
+
+entities:
+  # ---------------------------------------------------------------------------
+  # A. EMI-Banks (per BSP list, as of 31 May 2026)
+  # ---------------------------------------------------------------------------
+  - name: "Asia United Bank Corporation"
+    category: bank
+    instapay: true
+    pesonet: true
+    website:
+      mode: crawl
+      base_url: "https://www.aub.com.ph/"
+      # Verified live and WORKING: LLM extraction correctly finds real digital
+      # InstaPay/PESONet fees (PHP 8 via AUB Preferred Online Banking/Mobile
+      # App), not confused by the transaction limit mentioned on the same page.
+
+  - name: "AllBank (A Thrift Bank), Inc."
+    category: bank
+    instapay: true
+    pesonet: true
+    # website: TBD -- domain not confidently known
+
+  - name: "Bank of Commerce"
+    category: bank
+    instapay: true
+    pesonet: true
+    website:
+      mode: crawl
+      base_url: "https://www.bankcom.com.ph/"
+      # Verified live and WORKING: LLM extraction correctly finds both InstaPay
+      # and PESONet at PHP 15.00 via "Internet Banking (RIB) / Online Banking"
+      # -- this is the case that revealed the OTC/ATM safety-net filter was
+      # needed (the model initially also extracted a real PHP 100 OTC figure
+      # and a PHP 15 ATM figure from the same table despite prompt instructions
+      # excluding both; see scraper/llm_extract.py's _mentions_excluded_channel).
+
+  - name: "Bank of the Philippine Islands"
+    category: bank
+    instapay: true
+    pesonet: true
+    website:
+      mode: crawl
+      base_url: "https://www.bpi.com.ph/"
+      # Verified live and WORKING: LLM extraction correctly finds InstaPay =
+      # PHP 10.00 (flat, effective 2025-06-01) from a "BPI Permanently Keeps
+      # Reduced PHP10 InstaPay Fee" press release. BPI genuinely has more than
+      # one real fee-related announcement at once (this permanent-rate one,
+      # plus a separate limited-time small-transaction waiver promo) -- this is
+      # the case that drove building multi-page discovery (run_multi() checks
+      # every relevant candidate page, not just one). The promo-waiver page
+      # specifically has NOT reliably been among the top-8 discovered
+      # candidates in testing -- a known coverage gap, not a correctness bug
+      # (see README's "Known limitations found in practice").
+
+  - name: "BDO Unibank, Inc."
+    category: bank
+    instapay: true
+    pesonet: true
+    website:
+      mode: crawl
+      base_url: "https://www.bdo.com.ph/"
+      # Verified live: blocked/unreachable via plain HTTP crawl (0 pages
+      # fetched) -- likely bot/WAF protection. Expect this flagged in
+      # scraper_health until investigated (may need a different fetch approach).
+
+  - name: "Cantilan Bank, Inc."
+    category: bank
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "Cebuana Lhuillier Rural Bank, Inc."
+    category: bank
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "Citibank, N.A."
+    category: bank
+    instapay: true
+    pesonet: true
+    # website: TBD -- PH retail banking business was sold to UnionBank in 2022;
+    # unclear what (if any) consumer transfer-fee content remains on citibank.com.ph
+
+  - name: "China Banking Corporation"
+    category: bank
+    instapay: true
+    pesonet: true
+    website:
+      mode: crawl
+      base_url: "https://www.chinabank.ph/"
+      # Verified live and WORKING: LLM extraction correctly finds InstaPay as
+      # fee_type=promo, PHP 5.00, with the promo end date captured (through
+      # 2026-09-30) -- correctly distinguished from a standing permanent fee.
+      # No PESONet figure found on this specific page (the promo explicitly
+      # excludes PESONet transactions), correctly returns nothing rather than
+      # inventing a number.
+
+  - name: "CTBC Bank (Philippines) Corporation"
+    category: bank
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "Development Bank of the Philippines"
+    category: bank
+    instapay: true
+    pesonet: true
+    website:
+      mode: crawl
+      base_url: "https://www.dbp.ph/"
+      # untested live
+
+  - name: "Dungganon Bank (A Microfinance Rural Bank), Inc."
+    category: bank
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "East West Banking Corporation"
+    category: bank
+    instapay: true
+    pesonet: true
+    website:
+      mode: crawl
+      base_url: "https://www.eastwestbanker.com/"
+      # untested live
+
+  - name: "Equicom Savings Bank, Inc."
+    category: bank
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "First Consolidated Bank, Inc. (A Private Development Bank)"
+    category: bank
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "Land Bank of the Philippines"
+    category: bank
+    instapay: true
+    pesonet: true
+    website:
+      mode: crawl
+      base_url: "https://www.landbank.com/"
+      # Verified live: crawler reaches the site (15 pages checked) but found
+      # nothing clearing the relevance threshold -- fee content may be behind
+      # JavaScript or not linked within the crawl depth/budget used.
+
+  - name: "Maybank Philippines, Incorporated"
+    category: bank
+    instapay: true
+    pesonet: true
+    # website: TBD -- domain not confidently known (maybank.com.ph unverified)
+
+  - name: "Metropolitan Bank & Trust Company"
+    category: bank
+    instapay: true
+    pesonet: true
+    website:
+      mode: crawl
+      base_url: "https://www.metrobank.com.ph/"
+      # Verified live and WORKING: crawler finds a "zero InstaPay/PESONet
+      # fees" article and correctly resolves both networks to fee_type=free,
+      # amount=0.0 (not fooled by the "PHP 50,000 per transaction" limit
+      # mentioned in the same paragraph).
+
+  - name: "Netbank (A Rural Bank), Inc."
+    category: bank
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "Pacific Ace Savings Bank, Inc."
+    category: bank
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "Philippine Bank of Communications"
+    category: bank
+    instapay: true
+    pesonet: true
+    website:
+      mode: crawl
+      base_url: "https://www.pbcom.com.ph/"
+      # untested live
+
+  - name: "Philippine National Bank"
+    category: bank
+    instapay: true
+    pesonet: true
+    website:
+      mode: crawl
+      base_url: "https://www.pnb.com.ph/"
+      # Verified live: blocked/unreachable via plain HTTP crawl (0 pages
+      # fetched) -- likely bot/WAF protection, same as BDO.
+
+  - name: "Philippine Savings Bank"
+    category: bank
+    instapay: true
+    pesonet: true
+    website:
+      mode: crawl
+      base_url: "https://www.psbank.com.ph/"
+      # untested live
+
+  - name: "Rizal Commercial Banking Corporation"
+    category: bank
+    instapay: true
+    pesonet: true
+    website:
+      mode: crawl
+      base_url: "https://www.rcbc.com/"
+      # Verified live and WORKING: crawler finds rcbc.com/fees-charges with
+      # real InstaPay/PESONet amounts parsed correctly.
+
+  - name: "Rural Bank of Guinobatan, Inc."
+    category: bank
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "Security Bank Corporation"
+    category: bank
+    instapay: true
+    pesonet: true
+    website:
+      mode: crawl
+      base_url: "https://www.securitybank.com/"
+      # Verified live: blocked/unreachable via plain HTTP crawl (0 pages
+      # fetched) -- likely bot/WAF protection, same pattern as BDO/PNB.
+
+  - name: "Sterling Bank of Asia, Inc. (A Savings Bank)"
+    category: bank
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "UCPB Savings Bank"
+    category: bank
+    instapay: true
+    pesonet: true
+    # website: TBD -- UCPB merged into Landbank in 2022; entity's current
+    # standing/website is unclear, verify before relying on this entry
+
+  - name: "Union Bank of the Philippines"
+    category: bank
+    instapay: true
+    pesonet: true
+    website:
+      mode: crawl
+      base_url: "https://www.unionbankph.com/"
+      # Verified live: blocked/unreachable via plain HTTP crawl (0 pages
+      # fetched) -- likely bot/WAF protection.
+
+  # ---------------------------------------------------------------------------
+  # B. EMI-Non-Bank Financial Institutions (per BSP list, as of 31 May 2026)
+  # ---------------------------------------------------------------------------
+  - name: "AIPH Merchant Services, Inc. (previously Alipay Philippines, Inc.)"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "AllEasy Incorporated"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "Cebuana Lhuillier Services Corporation"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "CIS Bayad Center, Incorporated"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD -- consumer brand is "Bayad"; exact domain not confidently known
+
+  - name: "DCPAY Philippines, Incorporated"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD -- operates as "Coins.ph"; domain not confidently verified here
+
+  - name: "Direct Agent 5 Inc."
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "Easypay Global EMI Corporation"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "eMandarin Ventures, Incorporated"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "FDS Asya Philippines, Inc."
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "Flash Pay (Ph) Co. Ltd., Inc."
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "Gpay Network PH, Incorporated"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD -- operates as GrabPay PH; exact domain not confidently verified here
+
+  - name: "G-Xchange, Incorporated (GXI)"
+    category: e-wallet
+    instapay: true
+    pesonet: true
+    website:
+      mode: crawl
+      base_url: "https://www.gcash.com/"
+      # Verified live: no content found -- gcash.com is a JS-rendered app
+      # (React/Next.js-style site), so a plain HTTP crawl can't see fee
+      # content even where it exists. Would need a JS-rendering fetch
+      # (e.g. Playwright) to work here, not just crawl mode as-is.
+
+  - name: "Inception Technology Philippines Corporation"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "Infoserve, Incorporated"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD -- operates as "NationLink"; domain not confidently verified here
+
+  - name: "I-Pay Commerce Ventures Incorporated"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "I-Remit, Incorporated"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD -- domain not confidently verified here
+
+  - name: "Lulu Financial Services (Phils.) Incorporated"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "MarcoPay Incorporated"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "Maya Philippines, Incorporated"
+    category: e-wallet
+    instapay: true
+    pesonet: true
+    # website: TBD -- crawl mode DISABLED here on purpose. Verified live that
+    # www.maya.ph's crawl keeps surfacing an old (2021) promo/deals blog post
+    # about an InstaPay cash-in cashback voucher, not a current fee schedule,
+    # and parses a real-looking but wrong number ("Php 20 cashback") from it.
+    # This is a wrong-page-found problem, not an extraction bug -- no regex fix
+    # solves it. Needs a fixed-mode entry pointing at Maya's actual fee page
+    # (found and verified by hand) before re-enabling scraping for this entity.
+
+  - name: "Omni Pay Incorporated"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "PayMongo Payments Inc"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD -- primarily a merchant payment gateway, may not have a
+    # consumer InstaPay/PESONet transfer-fee page at all
+
+  - name: "Paynamics Technologies Incorporated"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "PAYS0 Inc"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "Peppermint Bizmoto Inc"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "Philippine Digital Asset Exchange, Inc."
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD -- operates as "PDAX"; domain not confidently verified here
+
+  - name: "PPS-PEPP Financial Services Corporation"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD -- operates as "PalawanPay"; domain not confidently verified here
+
+  - name: "ShopeePay Philippines, Incorporated"
+    category: e-wallet
+    instapay: true
+    pesonet: true
+    website:
+      mode: crawl
+      base_url: "https://shopeepay.ph/"
+      # Verified live: crawl gave up after 1 page -- likely a JS-rendered app
+      # shell, same class of problem as gcash.com.
+
+  - name: "SpeedyPay, Incorporated"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "Starpay Corporation"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "TagCash Ltd. Incorporated"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "TayoCash Incorporated"
+    category: e-wallet
+    instapay: true
+    pesonet: true
+    website:
+      mode: crawl
+      base_url: "https://www.tayocash.com/"
+      # Verified live: crawl gave up after 1 page -- likely a JS-rendered app
+      # shell, same class of problem as gcash.com/shopeepay.ph.
+
+  - name: "Togetech, Incorporated"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "Toktokwallet Inc."
+    category: e-wallet
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "TopJuan Tech Corporation"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "Toyota Financial Services Philippines Corporation"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "Traxion Pay Incorporated"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "True Money Philippines Incorporated"
+    category: e-wallet
+    instapay: true
+    pesonet: true
+    # website: TBD -- domain not confidently verified here
+
+  - name: "USSC Money Services Incorporated"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "WIBS PHP Incorporated"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD
+
+  - name: "Wise Pilipinas Incorporated"
+    category: emi
+    instapay: true
+    pesonet: true
+    # website: TBD -- global "Wise" brand; wise.com exists but PH-specific
+    # InstaPay/PESONet fee content not confidently located here
+
+  # ---------------------------------------------------------------------------
+  # Templates for reference (not scraped -- kept commented out)
+  # ---------------------------------------------------------------------------
+  # - name: "Sample Bank - fixed page (Template)"
+  #   category: bank
+  #   instapay: true
+  #   pesonet: true
+  #   website:
+  #     mode: fixed
+  #     url: "https://example.com/"
+  #     selectors:
+  #       InstaPay: "#instapay-fee"
+  #       PESONet: "#pesonet-fee"
+  #   facebook:
+  #     page_url: "https://www.facebook.com/example"
