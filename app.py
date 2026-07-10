@@ -188,7 +188,7 @@ def build_entity_cards(conn, fees: list[dict], flagged: list[dict]) -> str:
     return _CARD_CSS + "".join(cards)
 
 
-st.title("Philippine InstaPay / PESONet Transfer Fees Monitor")
+st.title("Philippine InstaPay / PESONet Transfer Fees Monitor (v2026-07-10)")
 st.caption(
     "Fees are collected only from each institution's own public website, press releases, or "
     "Facebook page -- never from BSP reports -- so this data can be used to independently "
