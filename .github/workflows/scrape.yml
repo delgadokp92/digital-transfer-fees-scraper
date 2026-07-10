@@ -2,7 +2,9 @@ name: Scrape transfer fees
 
 on:
   schedule:
-    - cron: "0 20 * * *"  # 04:00 Asia/Manila (UTC+8) daily
+    - cron: "0 1 * * *"   # 09:00 Asia/Manila (UTC+8)
+    - cron: "0 10 * * *"  # 18:00 Asia/Manila (UTC+8)
+    - cron: "0 16 * * *"  # 00:00 Asia/Manila (UTC+8)
   workflow_dispatch: {}
 
 jobs:
