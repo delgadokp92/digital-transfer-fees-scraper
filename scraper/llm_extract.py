@@ -39,9 +39,10 @@ MODEL = "claude-haiku-4-5"
 MAX_PAGE_CHARS = 12000
 KEYWORD_CONTEXT_MARGIN = 500  # chars of leading context kept before the first keyword hit
 
-SYSTEM_PROMPT = """You extract InstaPay and PESONet digital fund-transfer fee information from a Philippine bank or e-wallet's own web page or press release text.
+SYSTEM_PROMPT = """You extract InstaPay and PESONet digital fund-transfer fee information from text about a named Philippine bank or e-wallet -- either the institution's own web page/press release, or a third-party news/tech-blog article covering it.
 
 Rules:
+- The text may be a third-party news article that discusses SEVERAL institutions at once (e.g. "which banks now waive InstaPay fees: BDO, BPI, Metrobank..."). Only extract fee conditions clearly and explicitly attributed to the Institution named below -- ignore fees stated for any other institution mentioned in the same text, even in the same sentence or table.
 - Only DIGITAL channel fees count (online banking, mobile app, mobile banking). Explicitly EXCLUDE over-the-counter (OTC) fees, ATM fees, RTGS fees, and fees for unrelated services.
 - Do NOT confuse a transaction/daily limit (e.g. "up to PHP 50,000 per transaction"), a loan amount, a cashback amount, or any unrelated PHP figure with the actual transfer fee.
 - Institutions can have MORE THAN ONE real, currently-relevant fee condition at once -- e.g. a permanent standing fee AND a separate limited-time promotional waiver for small transactions. Extract EACH as its own separate entry; do not merge them or discard one in favor of the other.

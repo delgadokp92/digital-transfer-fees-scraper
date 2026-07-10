@@ -32,9 +32,15 @@
 # ground truth just because it parsed successfully.
 #
 # Fields:
-#   name        - display name of the institution
+#   name        - display name of the institution (its full legal/registered name)
 #   category    - bank | e-wallet | emi (free text, for grouping in the UI later)
 #   instapay/pesonet - whether the entity participates in each network (see caveat above)
+#   aliases     - optional list of well-known short/common names (e.g. "BDO" for
+#                 "BDO Unibank, Inc."), used ONLY by scraper/news.py to build a
+#                 third-party news/tech-blog search query and to confirm a found
+#                 article is actually about this institution -- news coverage
+#                 almost never uses the full legal name. Only added where a
+#                 short name is genuinely well-known, not guessed.
 #   facebook.page_url  - public Facebook page to check for fee announcements (best-effort, see README)
 #
 # website.mode: "fixed" -- exact fee page URL + CSS selectors (see README).
@@ -50,6 +56,7 @@ entities:
     category: bank
     instapay: true
     pesonet: true
+    aliases: ["AUB", "Asia United Bank"]  # for news-source search/matching (scraper/news.py) only
     website:
       mode: crawl
       base_url: "https://www.aub.com.ph/"
@@ -67,6 +74,7 @@ entities:
     category: bank
     instapay: true
     pesonet: true
+    aliases: ["BankCom"]
     website:
       mode: crawl
       base_url: "https://www.bankcom.com.ph/"
@@ -81,6 +89,7 @@ entities:
     category: bank
     instapay: true
     pesonet: true
+    aliases: ["BPI"]
     website:
       mode: crawl
       base_url: "https://www.bpi.com.ph/"
@@ -99,6 +108,7 @@ entities:
     category: bank
     instapay: true
     pesonet: true
+    aliases: ["BDO"]
     website:
       mode: crawl
       base_url: "https://www.bdo.com.ph/"
@@ -129,6 +139,7 @@ entities:
     category: bank
     instapay: true
     pesonet: true
+    aliases: ["China Bank", "Chinabank"]
     website:
       mode: crawl
       base_url: "https://www.chinabank.ph/"
@@ -149,6 +160,7 @@ entities:
     category: bank
     instapay: true
     pesonet: true
+    aliases: ["DBP"]
     website:
       mode: crawl
       base_url: "https://www.dbp.ph/"
@@ -164,6 +176,7 @@ entities:
     category: bank
     instapay: true
     pesonet: true
+    aliases: ["EastWest Bank", "EastWest"]
     website:
       mode: crawl
       base_url: "https://www.eastwestbanker.com/"
@@ -185,6 +198,7 @@ entities:
     category: bank
     instapay: true
     pesonet: true
+    aliases: ["Landbank", "LBP"]
     website:
       mode: crawl
       base_url: "https://www.landbank.com/"
@@ -202,6 +216,7 @@ entities:
     category: bank
     instapay: true
     pesonet: true
+    aliases: ["Metrobank"]
     website:
       mode: crawl
       base_url: "https://www.metrobank.com.ph/"
@@ -226,6 +241,7 @@ entities:
     category: bank
     instapay: true
     pesonet: true
+    aliases: ["PBCom", "PBCOM"]
     website:
       mode: crawl
       base_url: "https://www.pbcom.com.ph/"
@@ -235,6 +251,7 @@ entities:
     category: bank
     instapay: true
     pesonet: true
+    aliases: ["PNB"]
     website:
       mode: crawl
       base_url: "https://www.pnb.com.ph/"
@@ -245,6 +262,7 @@ entities:
     category: bank
     instapay: true
     pesonet: true
+    aliases: ["PSBank", "PS Bank"]
     website:
       mode: crawl
       base_url: "https://www.psbank.com.ph/"
@@ -254,6 +272,7 @@ entities:
     category: bank
     instapay: true
     pesonet: true
+    aliases: ["RCBC"]
     website:
       mode: crawl
       base_url: "https://www.rcbc.com/"
@@ -270,6 +289,7 @@ entities:
     category: bank
     instapay: true
     pesonet: true
+    aliases: ["Security Bank"]
     website:
       mode: crawl
       base_url: "https://www.securitybank.com/"
@@ -293,6 +313,7 @@ entities:
     category: bank
     instapay: true
     pesonet: true
+    aliases: ["UnionBank"]
     website:
       mode: crawl
       base_url: "https://www.unionbankph.com/"
@@ -372,6 +393,7 @@ entities:
     category: e-wallet
     instapay: true
     pesonet: true
+    aliases: ["GCash"]  # legal entity operates under the "GCash" consumer brand
     website:
       mode: crawl
       base_url: "https://www.gcash.com/"
@@ -475,6 +497,7 @@ entities:
     category: e-wallet
     instapay: true
     pesonet: true
+    aliases: ["ShopeePay"]
     website:
       mode: crawl
       base_url: "https://shopeepay.ph/"
@@ -503,6 +526,7 @@ entities:
     category: e-wallet
     instapay: true
     pesonet: true
+    aliases: ["TayoCash"]
     website:
       mode: crawl
       base_url: "https://www.tayocash.com/"

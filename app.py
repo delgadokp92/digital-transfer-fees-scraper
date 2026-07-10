@@ -9,6 +9,7 @@ import html
 import os
 import pathlib
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 import pandas as pd
 import streamlit as st
@@ -19,6 +20,7 @@ from storage import db
 VERSION = "v2026-07-10"
 ROOT_DIR = pathlib.Path(__file__).resolve().parent
 CONFIG_PATH = ROOT_DIR / "config" / "entities.yaml"
+NEWS_CONFIG_PATH = ROOT_DIR / "config" / "news_sources.yaml"
 
 st.set_page_config(page_title="PH Transfer Fees Monitor", layout="wide")
 
@@ -190,6 +192,25 @@ def load_sources():
 
 
 @st.cache_data(ttl=300)
+def load_news_domains() -> set[str]:
+    """Domains of configured third-party news/tech-blog outlets (see
+    config/news_sources.yaml) -- used only to pick a display icon (a news
+    outlet is fetched the same way as any other page, source_type='website'
+    in the DB; "official vs. third-party" is a config-level distinction)."""
+    with open(NEWS_CONFIG_PATH, "r", encoding="utf-8") as f:
+        sources = yaml.safe_load(f)["sources"]
+    return {urlparse(s["search_url_template"]).netloc for s in sources}
+
+
+def _source_icon(source_type: str, source_url: str | None, news_domains: set[str]) -> str:
+    if source_type == "facebook":
+        return "📘"
+    if source_url and urlparse(source_url).netloc in news_domains:
+        return "📰"
+    return "🌐"
+
+
+@st.cache_data(ttl=300)
 def load_entity_source_configs() -> dict[str, list[dict]]:
     """Configured source URLs per entity from entities.yaml (website +
     Facebook), skipping entities with nothing configured yet (# website: TBD)
@@ -312,11 +333,11 @@ def build_entity_cards(conn, fees: list[dict], flagged: list[dict]) -> str:
     return "".join(cards)
 
 
-def render_feed_item(row: dict, categories: dict[str, str], conn) -> str:
+def render_feed_item(row: dict, categories: dict[str, str], news_domains: set[str], conn) -> str:
     audit = db.query_audit(conn, row["audit_id"])
     source_url = audit["source_url"] if audit is not None else None
     source_type = audit["source_type"] if audit is not None else None
-    source_icon = "📘" if source_type == "facebook" else "🌐"
+    source_icon = _source_icon(source_type, source_url, news_domains)
 
     accent = _badge_class(row["fee_type"]).replace("badge-", "accent-")
     badge = (
@@ -348,10 +369,10 @@ def render_feed_item(row: dict, categories: dict[str, str], conn) -> str:
     )
 
 
-def build_feed_html(rows: list[dict], categories: dict[str, str], conn) -> str:
+def build_feed_html(rows: list[dict], categories: dict[str, str], news_domains: set[str], conn) -> str:
     if not rows:
         return '<div class="no-data">No updates match this filter yet.</div>'
-    return "".join(render_feed_item(row, categories, conn) for row in rows)
+    return "".join(render_feed_item(row, categories, news_domains, conn) for row in rows)
 
 
 def build_fee_comparison_table(fees: list[dict]) -> pd.DataFrame:
@@ -423,8 +444,9 @@ with tab_feed:
     st.subheader("What's new")
     st.caption(
         "Each entry is the first time this exact fee condition was detected -- later scrapes "
-        "that just reconfirm an already-known fee don't repeat here. Always reflects the full "
-        "detection history, independent of the sidebar's \"as of\" selector."
+        "that just reconfirm an already-known fee don't repeat here. Includes both each "
+        "institution's own channels (🌐/📘) and third-party news/tech-blog coverage (📰) -- "
+        "always reflects the full detection history, independent of the sidebar's \"as of\" selector."
     )
     categories = load_entity_categories()
     search_col, network_col = st.columns([2, 1])
@@ -443,7 +465,7 @@ with tab_feed:
     if not feed_rows:
         st.info("No updates match this filter yet.")
     else:
-        st.markdown(build_feed_html(feed_rows[:SHOWN], categories, get_conn()), unsafe_allow_html=True)
+        st.markdown(build_feed_html(feed_rows[:SHOWN], categories, load_news_domains(), get_conn()), unsafe_allow_html=True)
         if len(feed_rows) > SHOWN:
             st.caption(f"Showing the latest {SHOWN} of {len(feed_rows)} updates.")
 
@@ -517,8 +539,9 @@ with tab_compare:
 with tab_sources:
     st.subheader("Where each institution's information comes from")
     st.caption(
-        "Every source URL the scraper has actually fetched for an institution -- website and "
-        "Facebook -- with how many times it's been checked and whether the most recent check "
+        "Every source URL the scraper has actually fetched for an institution -- 🌐 the "
+        "institution's own website, 📘 its Facebook page, 📰 third-party news/tech-blog "
+        "coverage -- with how many times it's been checked and whether the most recent check "
         "succeeded. Configured sources not yet successfully reached show as \"not yet checked\", "
         "so coverage gaps are visible too, not just what worked."
     )
@@ -538,6 +561,7 @@ with tab_sources:
     if not all_source_entities:
         st.info("No sources match this filter yet.")
 
+    news_domains = load_news_domains()
     for entity in all_source_entities:
         entity_rows = checked_by_entity.get(entity, [])
         ok_count = sum(1 for r in entity_rows if r["last_status"] == "ok")
@@ -546,7 +570,7 @@ with tab_sources:
             seen = set()
             for row in entity_rows:
                 seen.add((row["source_type"], row["source_url"]))
-                icon = "📘" if row["source_type"] == "facebook" else "🌐"
+                icon = _source_icon(row["source_type"], row["source_url"], news_domains)
                 status_icon = "✅" if row["last_status"] == "ok" else "⚠️"
                 st.markdown(
                     f"{icon} [{row['source_url']}]({row['source_url']}) — {status_icon} "
@@ -557,5 +581,5 @@ with tab_sources:
             for cfg in configured.get(entity, []):
                 if (cfg["source_type"], cfg["source_url"]) in seen:
                     continue
-                icon = "📘" if cfg["source_type"] == "facebook" else "🌐"
+                icon = _source_icon(cfg["source_type"], cfg["source_url"], news_domains)
                 st.markdown(f"{icon} [{cfg['source_url']}]({cfg['source_url']}) — not yet checked")

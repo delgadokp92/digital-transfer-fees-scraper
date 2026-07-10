@@ -1,0 +1,36 @@
+# Third-party news/tech-blog outlets checked for institution fee coverage,
+# supplementing (never replacing) each institution's own website/press
+# releases/Facebook page. Added because some institutions' own sites are
+# fully unreachable from here (BDO: confirmed network/WAF-level block --
+# see README "Known limitations") while their fee changes still get covered
+# by outlets like these -- astig.ph and Tech Pilipinas both had a direct,
+# on-topic hit for BDO's InstaPay/PESONet fee waiver when checked manually.
+#
+# Checked for EVERY institution, not just ones whose own site is blocked --
+# a real fee change can be reported here before (or instead of) an
+# institution updating its own site. scraper/news.py substitutes
+# "<institution name> InstaPay PESONet transfer fee" into search_url_template
+# and crawls that outlet's own search-results page exactly like
+# scraper/website/crawler.py crawls an institution's own site.
+#
+# search_url_template must contain a literal "{query}" placeholder.
+sources:
+  - name: "Astig.PH"
+    search_url_template: "https://astig.ph/?s={query}"
+  - name: "Tech Pilipinas"
+    search_url_template: "https://techpilipinas.com/?s={query}"
+  - name: "YugaTech"
+    search_url_template: "https://www.yugatech.com/?s={query}"
+  - name: "InsiderPH"
+    search_url_template: "https://insiderph.com/?s={query}"
+  - name: "GMA News"
+    # Confirmed a JS-rendered search-results shell over plain HTTP (real
+    # results only appear after the page's own JS runs) -- relies entirely
+    # on the Playwright fallback in scraper/website/crawler.py to see
+    # anything here.
+    search_url_template: "https://www.gmanetwork.com/news/search/?q={query}"
+  - name: "ABS-CBN News"
+    # Confirmed bot/WAF-blocked (HTTP 403 on plain HTTP, same pattern as
+    # BDO) -- kept configured since the block may not be permanent, but
+    # expect this one to come back flagged in scraper_health most of the time.
+    search_url_template: "https://news.abs-cbn.com/search?q={query}"

@@ -8,6 +8,12 @@ Usage:
                                                        # when a fee value changes
                                                        # (requires: pip install playwright
                                                        # && playwright install chromium)
+    DISABLE_NEWS_SOURCES=1 python -m scraper.run_all # skip config/news_sources.yaml
+                                                       # (third-party news/tech-blog
+                                                       # coverage) -- on by default,
+                                                       # adds ~6x the LLM page-extraction
+                                                       # calls (one search per entity per
+                                                       # configured outlet); see README Cost
 """
 from __future__ import annotations
 
@@ -18,6 +24,7 @@ import yaml
 
 from scraper.base import ScrapeResult
 from scraper.facebook import FacebookPageScraper
+from scraper.news import NewsSearchScraper, load_news_sources
 from scraper.website.crawler import SiteCrawlerScraper
 from scraper.website.generic import GenericWebsiteScraper
 from storage import db
@@ -25,6 +32,7 @@ from storage import db
 ROOT_DIR = pathlib.Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT_DIR / "config" / "entities.yaml"
 SNAPSHOT_DIR = ROOT_DIR / "storage" / "snapshots"
+NEWS_SOURCES = load_news_sources()
 
 
 def load_entities() -> list[dict]:
@@ -67,6 +75,20 @@ def build_scrapers(entity_cfg: dict) -> list:
                 page_url=facebook_cfg["page_url"],
             )
         )
+
+    # Checked for every entity, not just ones whose own site is blocked -- a
+    # fee change can be reported here before (or instead of) an institution
+    # updating its own site (see scraper/news.py).
+    if not os.environ.get("DISABLE_NEWS_SOURCES"):
+        for source in NEWS_SOURCES:
+            scrapers.append(
+                NewsSearchScraper(
+                    entity=entity_cfg["name"],
+                    outlet_name=source["name"],
+                    search_url_template=source["search_url_template"],
+                    aliases=entity_cfg.get("aliases"),
+                )
+            )
 
     return scrapers
 

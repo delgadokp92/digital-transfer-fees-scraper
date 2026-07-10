@@ -113,7 +113,13 @@ requirement.
 
 Roughly $0.002-0.003 per page (Haiku pricing: $1/1M input tokens, $5/1M
 output). At the current registry size (~19 configured entities, up to 8
-candidate pages checked each), a full scheduled run costs well under $0.50.
+candidate pages checked each), official-channel scraping alone costs well
+under $0.50 per run. Third-party news coverage (below) adds up to
+`69 entities x 6 outlets x 3 pages` = ~1,242 more LLM calls in the worst case
+(~$3/run, ~$9/day at 3 runs/day) -- in practice far less, since an
+(entity, outlet) pair with zero qualifying candidates costs nothing (no LLM
+call is made at all), and most pairs find nothing. Set `DISABLE_NEWS_SOURCES=1`
+to skip this entirely if cost becomes a concern.
 
 ## Adding institutions
 
@@ -163,6 +169,50 @@ Each entity's `website.mode` picks how its fee page is found:
 Sites that need more than either mode can offer (e.g. JavaScript-rendered fee
 tables) should get their own scraper module under `scraper/website/` rather
 than forcing the generic or crawl scraper to handle everything.
+
+### Third-party news/tech-blog coverage
+
+Official-channel scraping has a real gap: some institutions' own sites are
+completely unreachable from here (BDO -- see "Known limitations" below), so
+their fee changes are invisible however good the crawler is. `scraper/news.py`
+supplements (never replaces) each institution's own channels by checking
+outlets configured in `config/news_sources.yaml` -- currently Astig.PH, Tech
+Pilipinas, YugaTech, InsiderPH, GMA News, and ABS-CBN News. For every entity,
+on every run, it builds `"<institution> InstaPay PESONet transfer fee"` and
+substitutes it into that outlet's own on-site search, then crawls/scores the
+results page exactly like `scraper/website/crawler.py` crawls an institution's
+own site (same keyword scoring, same Playwright fallback for JS-rendered
+search pages like GMA News).
+
+Verified live end-to-end for the case that motivated this: astig.ph and Tech
+Pilipinas both had a direct, on-topic article on BDO's InstaPay/PESONet fee
+waiver, correctly found and extracted despite BDO's own site being completely
+unreachable. Getting a clean result took two follow-up fixes, both confirmed
+against that live case:
+
+- **Search by common name, not the registry's full legal name.** "BDO
+  Unibank, Inc." returns poor/no results on these outlets' own search --
+  news coverage says "BDO". `config/entities.yaml` gained an optional
+  `aliases` field (added for entities with a website config) used only for
+  this search query and for confirming a found article is actually about the
+  right institution (a single article can discuss several institutions at
+  once, unlike an institution's own site) -- the LLM prompt is also told to
+  only attribute a fee to the institution named in the request.
+- **WordPress archive/taxonomy pages masquerade as articles.** A
+  `/category/...`, `/tag/...`, or arbitrary custom-taxonomy page (e.g.
+  astig.ph's `/brand/realme/`) can excerpt enough of a real article to pass
+  both the keyword score and the entity-name check, producing a duplicate
+  "source" for the same underlying story. Filtered on two cheap signals: a
+  known taxonomy path segment, and a slug too short to be a real headline (a
+  genuine article slug on every outlet checked is a multi-word phrase --
+  `bdo-unibank-instapay-pesonet-free-transfer-fee-free` -- a taxonomy term is
+  one or two words -- `realme`, `smartphones`).
+
+A news-sourced fee is fetched over plain HTTP like any other page
+(`source_type='website'` in the DB) -- "official vs. third-party" is a
+config-level distinction (whether the URL's domain is in
+`config/news_sources.yaml`), surfaced in the dashboard's Sources tab and news
+feed as a 📰 icon rather than 🌐, not a database one.
 
 ## How it works
 
@@ -229,6 +279,14 @@ someone reviews whether the page changed in a way that affects extraction.
 Live-testing the registry against real institution sites surfaced concrete
 failure modes -- not hypothetical risks:
 
+- **Not every configured news outlet is actually reachable, either.**
+  GMA News' search results only load via client-side JS (confirmed: plain
+  HTTP returns a near-empty shell) -- it depends entirely on the Playwright
+  fallback to see anything. ABS-CBN News returned a flat HTTP 403 on plain
+  HTTP, the same bot/WAF pattern as BDO -- kept configured in case that
+  changes, but expect it flagged in `scraper_health` most of the time.
+  Astig.PH, Tech Pilipinas, YugaTech, and InsiderPH all work over plain HTTP
+  and were confirmed live to surface real, on-topic articles.
 - **Bot/WAF-protected sites return nothing -- and a real browser doesn't
   reliably fix it.** BDO, PNB, Security Bank, and UnionBank all fail to fetch
   even a single page via plain HTTP. A Playwright fallback (real headless
