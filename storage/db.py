@@ -252,18 +252,25 @@ def query_fees_as_of_grouped(conn: sqlite3.Connection, as_of_iso: str, window_se
 
 
 def query_feed(conn: sqlite3.Connection, limit: int = 300) -> list[dict]:
-    """A "what's new" feed: one row per distinct fee fact (entity, network,
-    fee_type, amount, conditions), returning only its FIRST-seen scrape.
-    fee_snapshots is append-only and the scraper re-inserts a row for a
-    still-true fee on every run, so ordering by scraped_at directly would
-    repeat the same fee 3x/day forever -- this collapses that down to actual
-    new-information events (a fee introduced, changed, or a promo that
-    appeared), newest first."""
+    """A "what's new" feed: one row per distinct fee fact, returning only its
+    FIRST-seen scrape. fee_snapshots is append-only and the scraper re-inserts
+    a row for a still-true fee on every run, so ordering by scraped_at
+    directly would repeat the same fee 3x/day forever.
+
+    "New" is judged on the SUBSTANTIVE fields only (fee_type, amount,
+    effective_date) -- deliberately excluding the free-text `conditions`
+    description, since Claude Haiku can phrase an unchanged fee slightly
+    differently between runs, and that wording drift must not be mistaken for
+    a real change. A page that states its own effective_date makes a genuine
+    change straightforward to detect (the date itself differs); a page with
+    no date falls back to pure value-equality against what's already
+    recorded. Either way, an unchanged fact is still stored (every row stays
+    in fee_snapshots for history/audit) but is not surfaced here as "new"."""
     rows = conn.execute(
         """SELECT fs.* FROM fee_snapshots fs
            WHERE fs.id IN (
                SELECT MIN(id) FROM fee_snapshots
-               GROUP BY entity, network, fee_type, amount, conditions
+               GROUP BY entity, network, fee_type, amount, effective_date
            )
            ORDER BY fs.scraped_at DESC, fs.id DESC
            LIMIT ?""",

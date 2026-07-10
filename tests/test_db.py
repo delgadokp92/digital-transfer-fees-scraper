@@ -136,6 +136,87 @@ def test_query_latest_fees_grouped_excludes_a_much_older_batch():
     assert grouped[0]["conditions"] == "New batch"
 
 
+def test_query_feed_ignores_reworded_but_unchanged_fee():
+    conn = _make_conn()
+    audit1 = db.insert_audit_log(
+        conn, entity="Test Bank", source_url="https://example.test/fees", source_type="website",
+        fetched_at="2026-01-01T00:00:00+00:00", content_hash="a", structure_hash="s",
+        snapshot_path=None, screenshot_path=None, status="ok", error_message=None,
+    )
+    db.insert_fee_snapshot(
+        conn, entity="Test Bank", network="InstaPay", fee_type="flat", amount=25.0,
+        conditions="PHP 25 per transfer", effective_date=None,
+        scraped_at="2026-01-01T00:00:00+00:00", audit_id=audit1,
+    )
+    audit2 = db.insert_audit_log(
+        conn, entity="Test Bank", source_url="https://example.test/fees", source_type="website",
+        fetched_at="2026-01-02T00:00:00+00:00", content_hash="b", structure_hash="s",
+        snapshot_path=None, screenshot_path=None, status="ok", error_message=None,
+    )
+    # Same fee_type/amount/effective_date as before -- only the wording changed,
+    # which must NOT be treated as a new event (LLM rephrasing, not a real change).
+    db.insert_fee_snapshot(
+        conn, entity="Test Bank", network="InstaPay", fee_type="flat", amount=25.0,
+        conditions="A flat PHP 25.00 fee applies to each digital transfer", effective_date=None,
+        scraped_at="2026-01-02T00:00:00+00:00", audit_id=audit2,
+    )
+
+    feed = db.query_feed(conn)
+
+    assert len(feed) == 1
+    assert feed[0]["scraped_at"] == "2026-01-01T00:00:00+00:00"
+
+
+def test_query_feed_flags_genuine_amount_change_as_new():
+    conn = _make_conn()
+    audit1 = db.insert_audit_log(
+        conn, entity="Test Bank", source_url="https://example.test/fees", source_type="website",
+        fetched_at="2026-01-01T00:00:00+00:00", content_hash="a", structure_hash="s",
+        snapshot_path=None, screenshot_path=None, status="ok", error_message=None,
+    )
+    db.insert_fee_snapshot(
+        conn, entity="Test Bank", network="InstaPay", fee_type="flat", amount=25.0,
+        conditions="PHP 25 per transfer", effective_date=None,
+        scraped_at="2026-01-01T00:00:00+00:00", audit_id=audit1,
+    )
+    audit2 = db.insert_audit_log(
+        conn, entity="Test Bank", source_url="https://example.test/fees", source_type="website",
+        fetched_at="2026-01-02T00:00:00+00:00", content_hash="b", structure_hash="s",
+        snapshot_path=None, screenshot_path=None, status="ok", error_message=None,
+    )
+    db.insert_fee_snapshot(
+        conn, entity="Test Bank", network="InstaPay", fee_type="flat", amount=30.0,
+        conditions="PHP 30 per transfer", effective_date=None,
+        scraped_at="2026-01-02T00:00:00+00:00", audit_id=audit2,
+    )
+
+    feed = db.query_feed(conn)
+
+    assert len(feed) == 2
+    assert {row["amount"] for row in feed} == {25.0, 30.0}
+
+
+def test_query_sources_reports_check_count_and_latest_status():
+    conn = _make_conn()
+    db.insert_audit_log(
+        conn, entity="Test Bank", source_url="https://example.test/fees", source_type="website",
+        fetched_at="2026-01-01T00:00:00+00:00", content_hash="a", structure_hash="s",
+        snapshot_path=None, screenshot_path=None, status="ok", error_message=None,
+    )
+    db.insert_audit_log(
+        conn, entity="Test Bank", source_url="https://example.test/fees", source_type="website",
+        fetched_at="2026-01-02T00:00:00+00:00", content_hash="b", structure_hash="s",
+        snapshot_path=None, screenshot_path=None, status="error", error_message="timed out",
+    )
+
+    sources = db.query_sources(conn)
+
+    assert len(sources) == 1
+    assert sources[0]["check_count"] == 2
+    assert sources[0]["last_status"] == "error"
+    assert sources[0]["last_error"] == "timed out"
+
+
 def test_scraper_health_flagging():
     conn = _make_conn()
     db.upsert_scraper_health(

@@ -90,6 +90,16 @@ exclude over-the-counter (OTC) and ATM fees (only digital channels count), not
 confuse a transaction limit or loan/cashback amount with an actual fee, and
 return an empty list rather than force an answer out of irrelevant content.
 
+Not every page actually writes the words "InstaPay" or "PESONet" -- some just
+describe a transfer fee to another institution's account. The prompt tells the
+model to deduce the network from characteristics the text itself states:
+InstaPay settles instantly/in real time with a per-transaction limit around
+PHP 50,000; PESONet is a batch rail (same-day/next-banking-day credit, not
+instant) with materially higher limits. It's grounded in stated
+settlement-speed wording or a limit that clearly matches one rail -- never in
+the fee amount itself -- and the model is told to leave the fee out entirely
+if the text gives no such signal, rather than default to a guess.
+
 **A safety net backs the OTC/ATM exclusion, not just the prompt.** Live
 testing found the model doesn't always follow that instruction on pages that
 table multiple channels together (Bank of Commerce: real OTC and ATM figures
@@ -168,10 +178,14 @@ than forcing the generic or crawl scraper to handle everything.
   - `scraper_health` -- flags an entity/source when its page structure changes
     unexpectedly, a fetch/LLM call errors, or crawl discovery finds nothing at
     all clearing the relevance bar.
-- `app.py` is the Streamlit dashboard: a per-institution card view by default
-  (all currently-relevant conditions per network, each with its source link
-  and dates), a timepoint picker for historical views, and a "System details"
-  panel with fee history charts, the full audit trail, and Scraper Health.
+- `app.py` is the Streamlit dashboard, in four tabs: **Latest Updates** (a
+  news feed of newly-detected fee facts, see below), **By Institution** (a
+  card per institution with every currently-relevant condition per network,
+  source links, and a timepoint picker for historical views, plus a "System
+  details" panel with fee history charts/audit trail/Scraper Health),
+  **Fee Comparison** (institutions x InstaPay/PESONet x min/max fee), and
+  **Sources** (every source URL checked per institution, last-checked
+  time/status, and configured-but-unreached sources).
 - `.github/workflows/scrape.yml` runs the scraper on a daily schedule and
   commits the updated `fees.db` + snapshots back to the repo. Needs
   `ANTHROPIC_API_KEY` added as a repo secret (Settings → Secrets and variables
@@ -187,6 +201,19 @@ pages within one run are fetched seconds to minutes apart -- see
 badge means a limited-time promo (check the dates); a plain badge is a
 standing flat/tiered fee. Click "source" on any condition to open exactly the
 page it came from.
+
+**What counts as "new" in the Latest Updates feed.** `fee_snapshots` is
+append-only -- the scraper re-records a still-true fee on every run (3x/day),
+so naively showing every row would repeat the same fee forever. `db.query_feed`
+collapses that down to each fact's first-ever appearance, and "fact" is
+judged on the *substantive* fields only -- `fee_type`, `amount`, and any
+stated `effective_date` -- deliberately ignoring the free-text `conditions`
+wording, since Claude Haiku can phrase an unchanged fee slightly differently
+between runs and that drift must not be mistaken for a real change. A page
+that states its own effective date makes a genuine change straightforward to
+detect (the date itself differs); a page with no date falls back to plain
+value-equality against what's already recorded. An unchanged fact is still
+stored for history either way -- it just isn't surfaced as "new" again.
 
 ### Structure-change detection
 
@@ -211,7 +238,16 @@ failure modes -- not hypothetical risks:
   to fetch even the homepage (0 pages) -- this points to blocking at the
   network/WAF level (e.g. IP/datacenter reputation), not just a missing
   browser fingerprint, which a headless browser alone doesn't get around.
-  These come back flagged in `scraper_health` rather than silently empty.
+  Confirmed directly with `curl`, `requests`, and Playwright's Chromium all
+  hitting the identical pattern against `bdo.com.ph` (including its plain
+  homepage, not just the fee page): TCP connects, the TLS handshake
+  completes, the HTTP request goes out, and then literally zero bytes come
+  back for 20-45 seconds straight -- a silent drop (consistent with Akamai
+  Bot Manager keyed on IP/TLS-fingerprint reputation) rather than a
+  content-level or rendering problem, so switching tools (e.g. Selenium)
+  wouldn't be expected to help either; it presents a near-identical
+  fingerprint from the same network origin. These come back flagged in
+  `scraper_health` rather than silently empty.
 - **A "JS-rendered SPA" diagnosis can be wrong -- verify before assuming.**
   GCash, ShopeePay, and TayoCash were assumed to be app-shell SPAs invisible
   to plain HTTP. Testing the Playwright fallback found otherwise for GCash:
