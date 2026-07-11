@@ -1,3 +1,6 @@
+from unittest.mock import patch
+
+from scraper.llm_extract import FeeCondition
 from scraper.news import NewsSearchScraper
 
 
@@ -166,6 +169,99 @@ def test_candidate_must_mention_the_target_entity_by_name():
 
     urls = [url for url, _ in candidates]
     assert urls == ["https://astig.ph/test-bank-instapay-fee-free/"]
+
+
+def test_parse_page_drops_a_condition_that_names_a_different_real_institution():
+    # Confirmed live across 7 entities (BPI, China Bank, EastWest, LandBank,
+    # Metrobank, PNB, GXI/GCash): a "related articles" sidebar or a
+    # multi-bank roundup article can make an unrelated institution's name
+    # appear on the page, letting it through the discovery-time entity
+    # filter -- and the LLM then sometimes mislabels that page's real content
+    # (about a DIFFERENT institution) as belonging to the one being searched
+    # for. Here the extracted condition's own text explicitly names "LandBank"
+    # -- a different configured institution's own alias -- so it must be
+    # dropped regardless of what the (mocked) LLM returned.
+    scraper = _FakeNewsScraper(
+        {}, entity="G-Xchange, Incorporated (GXI)", outlet_name="YugaTech",
+        search_url_template="https://www.yugatech.com/?s={query}", aliases=["GCash"],
+    )
+
+    with patch(
+        "scraper.website.crawler.extract_fee_conditions",
+        return_value=[
+            FeeCondition(
+                network="InstaPay", fee_type="free", amount=None,
+                conditions=(
+                    "InstaPay transfers sent through digital channels (LandBank and "
+                    "Overseas Filipino Bank online banking/mobile app)"
+                ),
+                effective_date="2026-07-07", promo_end_date=None,
+            )
+        ],
+    ):
+        records = scraper._parse_page(
+            "https://www.yugatech.com/landbank-to-remove-instapay-and-pesonet-transfer-fees/",
+            "LandBank removes InstaPay and PESONet transfer fees. GCash cuts InstaPay fee (related article).",
+        )
+
+    assert records == []
+
+
+def test_parse_page_keeps_a_condition_that_uses_an_unlisted_product_brand():
+    # Confirmed live: EastWest's own real fee-waiver article got its
+    # extracted condition worded as "EasyWay and Komo digital platforms" --
+    # EastWest's actual app/product brands, not the word "EastWest" itself,
+    # and neither is a configured alias. An earlier version of this filter
+    # required the entity/alias to appear in the condition text and wrongly
+    # deleted this and five other legitimate rows. The correct check is
+    # whether a DIFFERENT institution is named, not whether this one is.
+    scraper = _FakeNewsScraper(
+        {}, entity="East West Banking Corporation", outlet_name="Astig.PH",
+        search_url_template="https://astig.ph/?s={query}", aliases=["EastWest"],
+    )
+
+    with patch(
+        "scraper.website.crawler.extract_fee_conditions",
+        return_value=[
+            FeeCondition(
+                network="InstaPay", fee_type="free", amount=None,
+                conditions="InstaPay transfers made through EasyWay and Komo digital platforms",
+                effective_date="2026-07-15", promo_end_date=None,
+            )
+        ],
+    ):
+        records = scraper._parse_page(
+            "https://astig.ph/eastwest-waives-instapay-pesonet-fees/",
+            "EastWest is waiving InstaPay fees on EasyWay and Komo starting July 15.",
+        )
+
+    assert len(records) == 1
+    assert records[0].entity == "East West Banking Corporation"
+
+
+def test_parse_page_keeps_a_condition_that_names_the_entity_or_its_alias():
+    scraper = _FakeNewsScraper(
+        {}, entity="G-Xchange, Incorporated (GXI)", outlet_name="YugaTech",
+        search_url_template="https://www.yugatech.com/?s={query}", aliases=["GCash"],
+    )
+
+    with patch(
+        "scraper.website.crawler.extract_fee_conditions",
+        return_value=[
+            FeeCondition(
+                network="InstaPay", fee_type="flat", amount=10.0,
+                conditions="InstaPay bank transfer through the GCash mobile app",
+                effective_date="2026-07-04", promo_end_date=None,
+            )
+        ],
+    ):
+        records = scraper._parse_page(
+            "https://www.yugatech.com/gcash-cuts-instapay-bank-transfer-fee/",
+            "GCash cuts InstaPay bank transfer fee from PHP 15 to PHP 10.",
+        )
+
+    assert len(records) == 1
+    assert records[0].entity == "G-Xchange, Incorporated (GXI)"
 
 
 def test_discovery_does_not_crawl_past_the_search_results_page():

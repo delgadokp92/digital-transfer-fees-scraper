@@ -23,7 +23,19 @@ Because a single article can discuss several institutions at once (unlike an
 institution's own site, which is inherently about only itself), the LLM
 prompt (scraper/llm_extract.py) is told to only attribute a fee to the
 institution named in the request, ignoring any other bank/e-wallet mentioned
-in the same text.
+in the same text -- but confirmed live that prompting alone isn't reliable
+here either: across 7 entities, a page whose real subject was BDO's or
+LandBank's fee waiver got mislabeled as the searched institution's own fee.
+NewsSearchScraper._parse_page adds a deterministic post-extraction guard for
+this, the same pattern as the OTC/ATM filter in llm_extract.py -- but it
+checks for a condition naming a DIFFERENT real institution, not merely
+failing to name itself: many legitimate extractions never repeat the
+institution's own name either (a generic paraphrase like "digital banking
+channels", or an unlisted product brand like EastWest's "Komo"/"EasyWay"),
+so requiring self-mention produces false positives that would delete real
+data. What every confirmed-bad case actually had in common was explicitly
+naming a DIFFERENT configured institution (BDO's own channel names, or
+"LandBank and Overseas Filipino Bank") instead.
 """
 from __future__ import annotations
 
@@ -33,7 +45,26 @@ from urllib.parse import quote_plus, urlparse
 
 import yaml
 
+from scraper.base import FeeRecord
 from scraper.website.crawler import DEFAULT_KEYWORDS, SiteCrawlerScraper
+
+ENTITIES_CONFIG_PATH = pathlib.Path(__file__).resolve().parent.parent / "config" / "entities.yaml"
+
+
+def _load_entity_name_index() -> dict[str, str]:
+    """lowercased name/alias -> canonical entity name, for every configured
+    institution -- used to detect a condition that names a DIFFERENT real
+    institution than the one being searched for (see module docstring)."""
+    with open(ENTITIES_CONFIG_PATH, "r", encoding="utf-8") as f:
+        entities = yaml.safe_load(f)["entities"]
+    index: dict[str, str] = {}
+    for e in entities:
+        for name in [e["name"]] + list(e.get("aliases", [])):
+            index[name.lower()] = e["name"]
+    return index
+
+
+_ENTITY_NAME_INDEX = _load_entity_name_index()
 
 CONFIG_PATH = pathlib.Path(__file__).resolve().parent.parent / "config" / "news_sources.yaml"
 NEWS_MAX_CANDIDATE_PAGES = 3  # tighter than a site's own crawler (8) -- an
@@ -107,6 +138,28 @@ class NewsSearchScraper(SiteCrawlerScraper):
 
     def _sitemap_candidates(self) -> list[tuple[str, str]]:
         return []
+
+    def _parse_page(self, source_url: str, page_text: str) -> list[FeeRecord]:
+        # Safety net, not just prompting (same pattern as the OTC/ATM filter
+        # in llm_extract.py): confirmed live across 7 entities (BPI, China
+        # Bank, EastWest, Landbank, Metrobank, PNB, GXI/GCash) that the LLM
+        # can mislabel a page's real content as being about the searched
+        # entity even when it isn't. Every confirmed-bad case explicitly named
+        # a DIFFERENT configured institution in its own `conditions` text
+        # (BDO's own channel names, or "LandBank and Overseas Filipino Bank")
+        # -- so that's the check, not "does it fail to name itself" (tried
+        # first, and confirmed to false-positive on legitimate extractions
+        # that use an unlisted product brand like EastWest's "Komo"/"EasyWay",
+        # or just a generic paraphrase with no channel name at all).
+        records = super()._parse_page(source_url, page_text)
+        return [r for r in records if not self._names_a_different_institution(r.conditions)]
+
+    def _names_a_different_institution(self, conditions_text: str | None) -> bool:
+        text = (conditions_text or "").lower()
+        return any(
+            name in text and canonical_entity != self.entity
+            for name, canonical_entity in _ENTITY_NAME_INDEX.items()
+        )
 
     def _discover_with_browser(self) -> list[tuple[str, str]]:
         # A real Chromium launch+crawl per (entity, outlet) combo is what a
