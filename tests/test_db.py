@@ -136,6 +136,82 @@ def test_query_latest_fees_grouped_excludes_a_much_older_batch():
     assert grouped[0]["conditions"] == "New batch"
 
 
+def test_query_latest_fees_grouped_excludes_an_expired_promo():
+    # A promo whose promo_end_date has already passed must not display as if
+    # still live just because nothing has re-scraped that page since.
+    conn = _make_conn()
+    audit = db.insert_audit_log(
+        conn, entity="Test Bank", source_url="https://example.test/promo", source_type="website",
+        fetched_at="2020-01-01T00:00:00+00:00", content_hash="h1", structure_hash="s1",
+        snapshot_path=None, screenshot_path=None, status="ok", error_message=None,
+    )
+    db.insert_fee_snapshot(
+        conn, entity="Test Bank", network="InstaPay", fee_type="promo", amount=0.0,
+        conditions="Free for a limited time (promo through 2020-06-30)", effective_date="2020-01-01",
+        scraped_at="2020-01-01T00:00:00+00:00", audit_id=audit, promo_end_date="2020-06-30",
+    )
+
+    grouped = db.query_latest_fees_grouped(conn)
+
+    assert grouped == []
+
+
+def test_query_fees_as_of_grouped_keeps_a_promo_that_was_still_live_at_that_time():
+    # Historical view: a promo that has since expired (relative to *today*)
+    # must still show up when looking at an as-of date that fell within its
+    # window -- expiry is relative to the as-of date, not today.
+    conn = _make_conn()
+    audit = db.insert_audit_log(
+        conn, entity="Test Bank", source_url="https://example.test/promo", source_type="website",
+        fetched_at="2020-01-01T00:00:00+00:00", content_hash="h1", structure_hash="s1",
+        snapshot_path=None, screenshot_path=None, status="ok", error_message=None,
+    )
+    db.insert_fee_snapshot(
+        conn, entity="Test Bank", network="InstaPay", fee_type="promo", amount=0.0,
+        conditions="Free for a limited time", effective_date="2020-01-01",
+        scraped_at="2020-01-01T00:00:00+00:00", audit_id=audit, promo_end_date="2020-06-30",
+    )
+
+    as_of_during_promo = db.query_fees_as_of_grouped(conn, "2020-03-01T00:00:00+00:00")
+    as_of_after_promo = db.query_fees_as_of_grouped(conn, "2020-12-01T00:00:00+00:00")
+
+    assert len(as_of_during_promo) == 1
+    assert as_of_after_promo == []
+
+
+def test_query_latest_fees_grouped_supersedes_an_older_standing_rate_discovered_late():
+    # A news article can be discovered well after it was published (search
+    # results aren't sorted by recency) -- if it lands in the same scrape
+    # batch as a genuinely current official-site rate, the one with the more
+    # recent effective_date must win, not both showing side by side.
+    conn = _make_conn()
+    current_audit = db.insert_audit_log(
+        conn, entity="Test Bank", source_url="https://example.test/fees", source_type="website",
+        fetched_at="2026-01-01T00:00:00+00:00", content_hash="h1", structure_hash="s1",
+        snapshot_path=None, screenshot_path=None, status="ok", error_message=None,
+    )
+    db.insert_fee_snapshot(
+        conn, entity="Test Bank", network="InstaPay", fee_type="flat", amount=25.0,
+        conditions="Current standing rate", effective_date="2025-06-01",
+        scraped_at="2026-01-01T00:00:01+00:00", audit_id=current_audit,
+    )
+    stale_news_audit = db.insert_audit_log(
+        conn, entity="Test Bank", source_url="https://news.example/old-article", source_type="website",
+        fetched_at="2026-01-01T00:00:05+00:00", content_hash="h2", structure_hash="s1",
+        snapshot_path=None, screenshot_path=None, status="ok", error_message=None,
+    )
+    db.insert_fee_snapshot(
+        conn, entity="Test Bank", network="InstaPay", fee_type="free", amount=0.0,
+        conditions="Old superseded waiver", effective_date="2022-01-01",
+        scraped_at="2026-01-01T00:00:05+00:00", audit_id=stale_news_audit,
+    )
+
+    grouped = db.query_latest_fees_grouped(conn)
+
+    assert len(grouped) == 1
+    assert grouped[0]["conditions"] == "Current standing rate"
+
+
 def test_query_feed_ignores_reworded_but_unchanged_fee():
     conn = _make_conn()
     audit1 = db.insert_audit_log(

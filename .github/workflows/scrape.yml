@@ -53,6 +53,15 @@ jobs:
       - name: Run scraper
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # News-source coverage (6 outlets x every entity) doesn't change
+          # minute-to-minute the way an official fee page can -- checking it
+          # on all 3 daily runs was pure added cost for no real freshness
+          # gain. Disable it on the 9am/6pm Manila runs, leave it enabled for
+          # the midnight run (once/day is enough) and for manual
+          # workflow_dispatch runs (github.event.schedule is unset there, so
+          # this evaluates falsy -- manual runs always get full coverage,
+          # useful when specifically testing news-source changes).
+          DISABLE_NEWS_SOURCES: ${{ (github.event.schedule == '0 1 * * *' || github.event.schedule == '0 10 * * *') && '1' || '' }}
         run: python -m scraper.run_all
 
       - name: Commit updated data

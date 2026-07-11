@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pathlib
 import sqlite3
-from datetime import datetime
+from datetime import date, datetime
 
 DB_PATH = pathlib.Path(__file__).resolve().parent / "fees.db"
 
@@ -72,8 +72,18 @@ def get_connection(db_path: str | pathlib.Path | None = None) -> sqlite3.Connect
     return conn
 
 
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, col_type: str) -> None:
+    existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+
+
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    # Added after fee_snapshots already existed in the committed storage/fees.db
+    # -- CREATE TABLE IF NOT EXISTS above won't retrofit a column onto an
+    # existing table, so migrate it explicitly rather than requiring a fresh DB.
+    _ensure_column(conn, "fee_snapshots", "promo_end_date", "TEXT")
     conn.commit()
 
 
@@ -121,12 +131,13 @@ def insert_fee_snapshot(
     effective_date: str | None,
     scraped_at: str,
     audit_id: int,
+    promo_end_date: str | None = None,
 ) -> int:
     cur = conn.execute(
         """INSERT INTO fee_snapshots
-           (entity, network, fee_type, amount, conditions, effective_date, scraped_at, audit_id)
-           VALUES (?,?,?,?,?,?,?,?)""",
-        (entity, network, fee_type, amount, conditions, effective_date, scraped_at, audit_id),
+           (entity, network, fee_type, amount, conditions, effective_date, scraped_at, audit_id, promo_end_date)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
+        (entity, network, fee_type, amount, conditions, effective_date, scraped_at, audit_id, promo_end_date),
     )
     conn.commit()
     return cur.lastrowid
@@ -203,6 +214,66 @@ def query_fees_as_of(conn: sqlite3.Connection, as_of_iso: str):
     ).fetchall()
 
 
+def _is_promo_expired(row: dict, as_of: datetime) -> bool:
+    if row["fee_type"] != "promo" or not row["promo_end_date"]:
+        return False
+    try:
+        promo_end = date.fromisoformat(row["promo_end_date"])
+    except ValueError:
+        return False  # unparseable date -- don't hide a condition over a formatting quirk
+    # promo_end_date is a calendar date with no time-of-day component, and
+    # as_of can be naive (datetime.now() for the "latest" query) or
+    # tz-aware (parsed from an as_of_iso string) -- compare at date
+    # granularity only, which sidesteps both the tz-awareness mismatch and
+    # any need to define what time-of-day a promo "ends" at.
+    return promo_end < as_of.date()
+
+
+def _more_current_standing_rate(candidate: dict, incumbent: dict) -> bool:
+    # ISO YYYY-MM-DD strings compare correctly as plain strings.
+    candidate_date, incumbent_date = candidate.get("effective_date"), incumbent.get("effective_date")
+    if candidate_date and incumbent_date:
+        return candidate_date > incumbent_date
+    if candidate_date and not incumbent_date:
+        return True  # a stated date beats an unstated one, regardless of scrape recency
+    if incumbent_date and not candidate_date:
+        return False
+    return candidate["scraped_at"] > incumbent["scraped_at"]
+
+
+def _filter_current_conditions(rows: list[dict], as_of: datetime) -> list[dict]:
+    """Applies two "is this actually still applicable?" rules on top of the
+    raw scrape-batch window, using each condition's own stated dates rather
+    than when we happened to scrape it:
+
+    - Drops promo conditions whose promo_end_date has already passed as of
+      `as_of` -- otherwise an expired promo displays as if still live for as
+      long as nothing re-scrapes that page differently.
+    - For non-promo (standing-rate) conditions, keeps only the one with the
+      most recent effective_date per (entity, network) -- a page or news
+      article can be discovered late (a search engine doesn't sort by
+      recency), which would otherwise insert an old, possibly superseded rate
+      with today's scraped_at and make it look exactly as current as the
+      genuinely up-to-date one. Promo conditions still legitimately stack
+      alongside a standing rate (a permanent rate AND a live small-transaction
+      waiver can both be true at once) -- this precedence only applies to
+      standing-rate rows competing to represent "the" current rate.
+    """
+    rows = [r for r in rows if not _is_promo_expired(r, as_of)]
+
+    standing_by_key: dict[tuple[str, str], dict] = {}
+    other_rows = []
+    for row in rows:
+        if row["fee_type"] == "promo":
+            other_rows.append(row)
+            continue
+        key = (row["entity"], row["network"])
+        incumbent = standing_by_key.get(key)
+        if incumbent is None or _more_current_standing_rate(row, incumbent):
+            standing_by_key[key] = row
+    return other_rows + list(standing_by_key.values())
+
+
 def query_latest_fees_grouped(conn: sqlite3.Connection, window_seconds: int = 3600) -> list[dict]:
     """Like query_latest_fees, but returns EVERY row from an entity's most
     recent scrape batch, not just one per (entity, network). LLM extraction
@@ -212,7 +283,8 @@ def query_latest_fees_grouped(conn: sqlite3.Connection, window_seconds: int = 36
     collapsing to a single row per network would silently discard one of them.
     `window_seconds` groups rows into the same "batch" if they're within that
     span of the entity's latest scrape (pages within one run_all.py run are
-    fetched seconds to minutes apart, not hours)."""
+    fetched seconds to minutes apart, not hours). See _filter_current_conditions
+    for the expired-promo and superseded-standing-rate filtering on top."""
     rows = [dict(r) for r in conn.execute("SELECT * FROM fee_snapshots ORDER BY entity, scraped_at").fetchall()]
     latest_by_entity: dict[str, datetime] = {}
     for row in rows:
@@ -225,12 +297,15 @@ def query_latest_fees_grouped(conn: sqlite3.Connection, window_seconds: int = 36
         ts = datetime.fromisoformat(row["scraped_at"])
         if (latest_by_entity[row["entity"]] - ts).total_seconds() <= window_seconds:
             result.append(row)
-    return result
+    return _filter_current_conditions(result, datetime.now())
 
 
 def query_fees_as_of_grouped(conn: sqlite3.Connection, as_of_iso: str, window_seconds: int = 3600) -> list[dict]:
     """As-of variant of query_latest_fees_grouped: groups each entity's rows
-    into its most recent scrape batch at or before as_of_iso."""
+    into its most recent scrape batch at or before as_of_iso, then applies the
+    same "is this actually applicable as of that time" filtering (see
+    _filter_current_conditions) using as_of_iso itself -- not today -- as the
+    reference date, so a historical view correctly shows what was live then."""
     as_of = datetime.fromisoformat(as_of_iso)
     rows = [
         dict(r) for r in conn.execute(
@@ -248,7 +323,7 @@ def query_fees_as_of_grouped(conn: sqlite3.Connection, as_of_iso: str, window_se
         ts = datetime.fromisoformat(row["scraped_at"])
         if (latest_by_entity[row["entity"]] - ts).total_seconds() <= window_seconds:
             result.append(row)
-    return result
+    return _filter_current_conditions(result, as_of)
 
 
 def query_feed(conn: sqlite3.Connection, limit: int = 300) -> list[dict]:

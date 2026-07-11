@@ -27,6 +27,7 @@ every other scraper failure in this project.
 from __future__ import annotations
 
 import re
+import threading
 from typing import Literal
 
 import anthropic
@@ -88,12 +89,18 @@ def _mentions_excluded_channel(conditions: str) -> bool:
 
 
 _client: anthropic.Anthropic | None = None
+_client_lock = threading.Lock()
 
 
 def _get_client() -> anthropic.Anthropic:
+    # run_all.py now calls extract_fee_conditions concurrently from a thread
+    # pool for news-source scraping -- guard first-call lazy init so two
+    # threads racing here can't both construct a client.
     global _client
     if _client is None:
-        _client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
+        with _client_lock:
+            if _client is None:
+                _client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
     return _client
 
 

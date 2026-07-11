@@ -18,6 +18,7 @@ class FeeRecord:
     amount: float | None
     conditions: str | None = None
     effective_date: str | None = None
+    promo_end_date: str | None = None
 
 
 @dataclass

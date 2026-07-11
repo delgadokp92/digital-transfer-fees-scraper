@@ -92,7 +92,11 @@ class NewsSearchScraper(SiteCrawlerScraper):
             entity=entity,
             base_url=search_url,
             keywords=DEFAULT_KEYWORDS + [search_name.lower()],
-            max_pages=15,
+            # NEWS_MAX_CANDIDATE_PAGES already caps final candidates at 3, so
+            # most of a larger budget is spent chasing pagination depth on
+            # searches that were always going to come back empty (the common
+            # case: most institutions have no coverage on most outlets).
+            max_pages=8,
             max_depth=1,
         )
         self.outlet_name = outlet_name

@@ -17,6 +17,7 @@ Usage:
 """
 from __future__ import annotations
 
+import concurrent.futures
 import os
 import pathlib
 
@@ -33,6 +34,7 @@ ROOT_DIR = pathlib.Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT_DIR / "config" / "entities.yaml"
 SNAPSHOT_DIR = ROOT_DIR / "storage" / "snapshots"
 NEWS_SOURCES = load_news_sources()
+NEWS_WORKERS = int(os.environ.get("NEWS_WORKERS", "10"))
 
 
 def load_entities() -> list[dict]:
@@ -172,6 +174,7 @@ def process_result(conn, result: ScrapeResult, enable_screenshots: bool) -> None
             effective_date=record.effective_date,
             scraped_at=result.fetched_at,
             audit_id=audit_id,
+            promo_end_date=record.promo_end_date,
         )
 
     if enable_screenshots and any_fee_changed and result.source_type == "website":
@@ -191,6 +194,10 @@ def process_result(conn, result: ScrapeResult, enable_screenshots: bool) -> None
     )
 
 
+def _print_result(result: ScrapeResult) -> None:
+    print(f"[{result.status.upper()}] {result.entity} ({result.source_type}, {result.source_url}) -> {len(result.fee_records)} fee record(s)")
+
+
 def main() -> None:
     enable_screenshots = bool(os.environ.get("ENABLE_SCREENSHOTS"))
     entities = load_entities()
@@ -198,11 +205,40 @@ def main() -> None:
     conn = db.get_connection()
     db.init_db(conn)
 
+    official_scrapers = []
+    news_scrapers = []
     for entity_cfg in entities:
         for scraper in build_scrapers(entity_cfg):
-            for result in scraper.run_multi():
+            (news_scrapers if isinstance(scraper, NewsSearchScraper) else official_scrapers).append(scraper)
+
+    # Official-site/Facebook scrapers run sequentially: a handful of them can
+    # fall back to a real Playwright browser (scraper/website/crawler.py),
+    # whose sync API is not safe to invoke from worker threads. There are only
+    # ~18-30 of these, so this isn't the part that was making runs take hours.
+    for scraper in official_scrapers:
+        for result in scraper.run_multi():
+            process_result(conn, result, enable_screenshots)
+            _print_result(result)
+
+    # News-source scrapers never touch Playwright (browser fallback is
+    # disabled for them -- see scraper/news.py), so they're pure I/O-bound
+    # HTTP fetches and safe to run concurrently. This is the bulk of the work
+    # (6 outlets x every entity) and was the actual reason a full run could
+    # blow past GitHub's 6h job ceiling -- see git history for that incident.
+    # DB writes (process_result) stay on the main thread throughout; only the
+    # network fetch + LLM extraction (run_multi()) happens in worker threads.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=NEWS_WORKERS) as pool:
+        futures = {pool.submit(scraper.run_multi): scraper for scraper in news_scrapers}
+        for future in concurrent.futures.as_completed(futures):
+            scraper = futures[future]
+            try:
+                results = future.result()
+            except Exception as exc:  # a single scraper's unhandled failure must not crash the batch
+                print(f"[ERROR] {scraper.entity} (news, {scraper.base_url}) -> unhandled exception: {exc}")
+                continue
+            for result in results:
                 process_result(conn, result, enable_screenshots)
-                print(f"[{result.status.upper()}] {result.entity} ({result.source_type}, {result.source_url}) -> {len(result.fee_records)} fee record(s)")
+                _print_result(result)
 
     conn.close()
 

@@ -59,6 +59,7 @@ class FacebookPageScraper(BaseScraper):
                 amount=condition.amount,
                 conditions=format_conditions_text(condition),
                 effective_date=condition.effective_date,
+                promo_end_date=condition.promo_end_date,
             )
             for condition in extract_fee_conditions(self.entity, self.source_url, text)
         ]

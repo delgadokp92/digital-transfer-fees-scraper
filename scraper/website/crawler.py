@@ -314,6 +314,7 @@ class SiteCrawlerScraper(BaseScraper):
                 amount=c.amount,
                 conditions=format_conditions_text(c),
                 effective_date=c.effective_date,
+                promo_end_date=c.promo_end_date,
             )
             for c in conditions
         ]
