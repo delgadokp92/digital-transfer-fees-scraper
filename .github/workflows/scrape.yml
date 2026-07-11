@@ -26,6 +26,17 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # GitHub's hard 6h job ceiling kills the runner with NO grace period --
+    # steps after it (including the commit below) never run, so anything
+    # scraped that run is lost even though storage/fees.db commits each row
+    # to disk as it goes (storage/db.py commits after every insert). A
+    # self-configured timeout well under that ceiling cancels the job through
+    # the *normal* cancellation path instead, which does give `if: always()`
+    # steps a grace window to still run -- confirmed via GitHub Actions docs.
+    # Combined with the news-source browser-fallback fix (scraper/news.py),
+    # this should no longer be needed as a hard stop, but it's cheap insurance
+    # against any future slow entity/outlet from silently eating the whole run.
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
 
@@ -45,6 +56,7 @@ jobs:
         run: python -m scraper.run_all
 
       - name: Commit updated data
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

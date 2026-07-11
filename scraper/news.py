@@ -104,6 +104,19 @@ class NewsSearchScraper(SiteCrawlerScraper):
     def _sitemap_candidates(self) -> list[tuple[str, str]]:
         return []
 
+    def _discover_with_browser(self) -> list[tuple[str, str]]:
+        # A real Chromium launch+crawl per (entity, outlet) combo is what a
+        # site-owner's own crawl needs when its site is a genuine SPA/WAF
+        # block -- but here it just means "this outlet has no coverage of
+        # this institution," which is true for most institutions on most
+        # outlets. Confirmed live: with 6 outlets x ~40 entities, this
+        # fallback firing on every zero-hit search ran the scheduled workflow
+        # past GitHub's hard 6-hour ceiling, which kills the job with no
+        # grace period -- losing the entire run's data (see run_all.py /
+        # scrape.yml). News coverage is supplementary/best-effort, not worth
+        # that cost -- skip it and accept "not found" from plain HTTP alone.
+        return []
+
     def _discover_candidate_pages(self) -> list[tuple[str, str]]:
         candidates = super()._discover_candidate_pages()
         # The search-results page's own URL always contains the query
