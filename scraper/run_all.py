@@ -96,7 +96,15 @@ def build_scrapers(entity_cfg: dict) -> list:
 
 
 def _safe_path_component(value: str) -> str:
-    return "".join(c if c.isalnum() or c in "-_." else "_" for c in value)
+    sanitized = "".join(c if c.isalnum() or c in "-_." else "_" for c in value)
+    # Windows (and git-for-windows' core.protectNTFS check) rejects path
+    # components ending in a period or space -- an entity name literally
+    # ending in "Inc." (BDO Unibank, Inc.; Cantilan Bank, Inc.; etc. -- 14 in
+    # config/entities.yaml) sanitizes to a trailing "." otherwise, which
+    # blocked `git rebase`/checkout entirely on a Windows machine once such a
+    # snapshot path landed in a commit. Strip trailing dots/spaces so every
+    # path this produces is valid cross-platform.
+    return sanitized.rstrip(". ")
 
 
 def save_snapshot(entity: str, source_type: str, fetched_at: str, raw_content: str) -> str:
